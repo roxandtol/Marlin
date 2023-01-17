@@ -2852,7 +2852,7 @@
     #define W_CHAIN_POS     -1
     //#define W_INTERPOLATE  true
     //#define W_HOLD_MULTIPLIER 0.5
-  #endifhttps://youtube.com/shorts/9YTgeWgxZfI?feature=share
+  #endif
 
   #if AXIS_IS_TMC_CONFIG(E0)
     #define E0_CURRENT      900
@@ -3155,9 +3155,9 @@
 
   #if EITHER(SENSORLESS_HOMING, SENSORLESS_PROBING)
     // TMC2209: 0...255. TMC2130: -64...63
-    #define X_STALL_SENSITIVITY  130
+    #define X_STALL_SENSITIVITY  95
     #define X2_STALL_SENSITIVITY X_STALL_SENSITIVITY
-    #define Y_STALL_SENSITIVITY  130
+    #define Y_STALL_SENSITIVITY  95
     #define Y2_STALL_SENSITIVITY Y_STALL_SENSITIVITY
     //#define Z_STALL_SENSITIVITY  8
     //#define Z2_STALL_SENSITIVITY Z_STALL_SENSITIVITY
