@@ -83,7 +83,7 @@
   #error "POSTMORTEM_DEBUGGING requires CORE_DISABLE_FAULT_HANDLER to be set."
 #endif
 
-#if defined(PANIC_ENABLE)
+#ifdef PANIC_ENABLE
   #if defined(PANIC_USART1_TX_PIN) || defined(PANIC_USART2_TX_PIN) || defined(PANIC_USART3_TX_PIN) || defined(PANIC_USART3_TX_PIN)
     #error "HC32 HAL uses a custom panic handler. Do not define PANIC_USARTx_TX_PIN."
   #endif
@@ -94,8 +94,10 @@
     #error "SERIAL_DMA requires USART_RX_DMA_SUPPORT to be enabled in the arduino core."
   #endif
 
-  // USART_RX_DMA_SUPPORT does not implement core_hook_usart_rx_irq, which is required for the emergency parser
-  #if ENABLED(EMERGENCY_PARSER)
+  // Before arduino core version 1.2.0, USART_RX_DMA_SUPPORT did not implement
+  // core_hook_usart_rx_irq, which is required for the emergency parser.
+  // With 1.2.0, this was fixed (see https://github.com/shadow578/framework-arduino-hc32f46x/pull/25).
+  #if ENABLED(EMERGENCY_PARSER) && ARDUINO_CORE_VERSION_INT < GET_VERSION_INT(1, 2, 0)
     #error "EMERGENCY_PARSER is not supported with SERIAL_DMA. Please disable either SERIAL_DMA or EMERGENCY_PARSER."
   #endif
 

@@ -39,10 +39,8 @@
   #include "../../module/delta.h"
 #endif
 
-#if HAS_LEVELING
-  #include "../../module/planner.h"
-  #include "../../feature/bedlevel/bedlevel.h"
-#endif
+// Always show configurable options regardless of FT Motion active
+//#define FT_MOTION_NO_MENU_TOGGLE
 
 constexpr bool has_large_area() {
   return TERN0(HAS_X_AXIS, (X_BED_SIZE) >= 1000) || TERN0(HAS_Y_AXIS, (Y_BED_SIZE) >= 1000) || TERN0(HAS_Z_AXIS, (Z_MAX_POS) >= 1000);
@@ -116,7 +114,7 @@ void lcd_move_axis(const AxisEnum axis) {
 
 #if ANY(PROBE_OFFSET_WIZARD, X_AXIS_TWIST_COMPENSATION)
 
-  void _goto_manual_move_z(const_float_t scale) {
+  void _goto_manual_move_z(const float scale) {
     ui.manual_move.menu_scale = scale;
     ui.goto_screen([]{ lcd_move_axis(Z_AXIS); });
   }
@@ -131,7 +129,7 @@ void lcd_move_axis(const AxisEnum axis) {
   #define FINE_MANUAL_MOVE 0.025
 #endif
 
-void _goto_manual_move(const_float_t scale) {
+void _goto_manual_move(const float scale) {
   ui.defer_status_screen();
   ui.manual_move.menu_scale = scale;
   ui.goto_screen(ui.manual_move.screen_ptr);
@@ -293,7 +291,7 @@ void menu_move() {
   END_MENU();
 }
 
-#define _HOME_ITEM(N) GCODES_ITEM_N(N##_AXIS, MSG_AUTO_HOME_A, F("G28" STR_##N));
+#define _HOME_ITEM(N) GCODES_ITEM_N(N##_AXIS, MSG_AUTO_HOME_N, F("G28" STR_##N));
 
 #if ENABLED(INDIVIDUAL_AXIS_HOMING_SUBMENU)
   //
@@ -310,22 +308,11 @@ void menu_move() {
   }
 #endif
 
-#if ENABLED(AUTO_BED_LEVELING_UBL)
-  void _lcd_ubl_level_bed();
-#elif ENABLED(LCD_BED_LEVELING)
-  void menu_bed_leveling();
-#endif
-
-#if ENABLED(ASSISTED_TRAMMING_WIZARD)
-  void goto_tramming_wizard();
-#endif
-
 #if ENABLED(FT_MOTION_MENU)
 
   #include "../../module/ft_motion.h"
-  #include "../../gcode/gcode.h"
 
-  FSTR_P get_shaper_name(const AxisEnum axis=X_AXIS) {
+  FSTR_P get_shaper_name(const AxisEnum axis) {
     switch (ftMotion.cfg.shaper[axis]) {
       default: return nullptr;
       case ftMotionShaper_NONE:  return GET_TEXT_F(MSG_LCD_OFF);
@@ -351,47 +338,73 @@ void menu_move() {
     }
   #endif
 
-  void ftm_menu_set_cmpn(const AxisEnum axis, const ftMotionShaper_t s) {
-    ftMotion.cfg.shaper[axis] = s;
+  void ftm_menu_set_shaper(ftMotionShaper_t &outShaper, const ftMotionShaper_t s) {
+    outShaper = s;
     ftMotion.update_shaping_params();
     ui.go_back();
   }
 
-  inline void menu_ftm_cmpn_x() {
-    const ftMotionShaper_t shaper = ftMotion.cfg.shaper[X_AXIS];
-    START_MENU();
-    BACK_ITEM(MSG_FIXED_TIME_MOTION);
+  #define MENU_FTM_SHAPER(A) \
+    inline void menu_ftm_shaper_##A() { \
+      const ftMotionShaper_t shaper = ftMotion.cfg.shaper.A; \
+      START_MENU(); \
+      BACK_ITEM(MSG_FIXED_TIME_MOTION); \
+      if (shaper != ftMotionShaper_NONE)  ACTION_ITEM(MSG_LCD_OFF,  []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_NONE  ); }); \
+      if (shaper != ftMotionShaper_ZV)    ACTION_ITEM(MSG_FTM_ZV,   []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_ZV    ); }); \
+      if (shaper != ftMotionShaper_ZVD)   ACTION_ITEM(MSG_FTM_ZVD,  []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_ZVD   ); }); \
+      if (shaper != ftMotionShaper_ZVDD)  ACTION_ITEM(MSG_FTM_ZVDD, []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_ZVDD  ); }); \
+      if (shaper != ftMotionShaper_ZVDDD) ACTION_ITEM(MSG_FTM_ZVDDD,[]{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_ZVDDD ); }); \
+      if (shaper != ftMotionShaper_EI)    ACTION_ITEM(MSG_FTM_EI,   []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_EI    ); }); \
+      if (shaper != ftMotionShaper_2HEI)  ACTION_ITEM(MSG_FTM_2HEI, []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_2HEI  ); }); \
+      if (shaper != ftMotionShaper_3HEI)  ACTION_ITEM(MSG_FTM_3HEI, []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_3HEI  ); }); \
+      if (shaper != ftMotionShaper_MZV)   ACTION_ITEM(MSG_FTM_MZV,  []{ ftm_menu_set_shaper(ftMotion.cfg.shaper.A, ftMotionShaper_MZV   ); }); \
+      END_MENU(); \
+    }
 
-    if (shaper != ftMotionShaper_NONE)   ACTION_ITEM(MSG_LCD_OFF,  []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_NONE); });
-    if (shaper != ftMotionShaper_ZV)     ACTION_ITEM(MSG_FTM_ZV,   []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_ZV); });
-    if (shaper != ftMotionShaper_ZVD)    ACTION_ITEM(MSG_FTM_ZVD,  []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_ZVD); });
-    if (shaper != ftMotionShaper_ZVDD)   ACTION_ITEM(MSG_FTM_ZVDD, []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_ZVDD); });
-    if (shaper != ftMotionShaper_ZVDDD)  ACTION_ITEM(MSG_FTM_ZVDDD,[]{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_ZVDDD); });
-    if (shaper != ftMotionShaper_EI)     ACTION_ITEM(MSG_FTM_EI,   []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_EI); });
-    if (shaper != ftMotionShaper_2HEI)   ACTION_ITEM(MSG_FTM_2HEI, []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_2HEI); });
-    if (shaper != ftMotionShaper_3HEI)   ACTION_ITEM(MSG_FTM_3HEI, []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_3HEI); });
-    if (shaper != ftMotionShaper_MZV)    ACTION_ITEM(MSG_FTM_MZV,  []{ ftm_menu_set_cmpn(X_AXIS, ftMotionShaper_MZV); });
-
+  SHAPED_MAP(MENU_FTM_SHAPER);
+  #if ENABLED(FTM_POLYS)
+    void menu_ftm_trajectory_generator() {
+      const TrajectoryType current_type = ftMotion.getTrajectoryType();
+      START_MENU();
+      BACK_ITEM(MSG_FIXED_TIME_MOTION);
+      if (current_type != TrajectoryType::TRAPEZOIDAL) ACTION_ITEM(MSG_FTM_TRAPEZOIDAL, []{ planner.synchronize(); ftMotion.setTrajectoryType(TrajectoryType::TRAPEZOIDAL);  ui.go_back(); });
+      if (current_type != TrajectoryType::POLY5)       ACTION_ITEM(MSG_FTM_POLY5,       []{ planner.synchronize(); ftMotion.setTrajectoryType(TrajectoryType::POLY5);        ui.go_back(); });
+      if (current_type != TrajectoryType::POLY6)       ACTION_ITEM(MSG_FTM_POLY6,       []{ planner.synchronize(); ftMotion.setTrajectoryType(TrajectoryType::POLY6);        ui.go_back(); });
     END_MENU();
   }
+  #endif // FTM_POLYS
 
-  inline void menu_ftm_cmpn_y() {
-    const ftMotionShaper_t shaper = ftMotion.cfg.shaper[Y_AXIS];
-    START_MENU();
-    BACK_ITEM(MSG_FIXED_TIME_MOTION);
+  #if ENABLED(FTM_RESONANCE_TEST)
 
-    if (shaper != ftMotionShaper_NONE)   ACTION_ITEM(MSG_LCD_OFF,  []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_NONE); });
-    if (shaper != ftMotionShaper_ZV)     ACTION_ITEM(MSG_FTM_ZV,   []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_ZV); });
-    if (shaper != ftMotionShaper_ZVD)    ACTION_ITEM(MSG_FTM_ZVD,  []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_ZVD); });
-    if (shaper != ftMotionShaper_ZVDD)   ACTION_ITEM(MSG_FTM_ZVDD, []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_ZVDD); });
-    if (shaper != ftMotionShaper_ZVDDD)  ACTION_ITEM(MSG_FTM_ZVDDD,[]{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_ZVDDD); });
-    if (shaper != ftMotionShaper_EI)     ACTION_ITEM(MSG_FTM_EI,   []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_EI); });
-    if (shaper != ftMotionShaper_2HEI)   ACTION_ITEM(MSG_FTM_2HEI, []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_2HEI); });
-    if (shaper != ftMotionShaper_3HEI)   ACTION_ITEM(MSG_FTM_3HEI, []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_3HEI); });
-    if (shaper != ftMotionShaper_MZV)    ACTION_ITEM(MSG_FTM_MZV,  []{ ftm_menu_set_cmpn(Y_AXIS, ftMotionShaper_MZV); });
+    void menu_ftm_resonance_freq() {
+      START_MENU();
+      BACK_ITEM(MSG_FTM_RESONANCE_TEST);
 
-    END_MENU();
-  }
+      STATIC_ITEM(MSG_FTM_RETRIEVE_FREQ);
+      EDIT_ITEM(float62, MSG_FTM_TIMELINE_FREQ, &ftMotion.rtg.timeline, 0.0f, 600.0f);
+      PSTRING_ITEM(MSG_FTM_RESONANCE_FREQ, ftostr53_63(ftMotion.rtg.getFrequencyFromTimeline()), SS_FULL);
+
+      END_MENU();
+    }
+
+    void menu_ftm_resonance_test() {
+      START_MENU();
+      BACK_ITEM(MSG_FIXED_TIME_MOTION);
+
+      if (ftMotion.rtg.isActive() && !ftMotion.rtg.isDone()) {
+        STATIC_ITEM(MSG_FTM_RT_RUNNING);
+        ACTION_ITEM(MSG_FTM_RT_STOP, []{ ftMotion.rtg.abort(); ui.refresh(); });
+      }
+      else {
+        GCODES_ITEM_N(X_AXIS, MSG_FTM_RT_START_N, F("M495 X S"));
+        GCODES_ITEM_N(Y_AXIS, MSG_FTM_RT_START_N, F("M495 Y S"));
+        GCODES_ITEM_N(Z_AXIS, MSG_FTM_RT_START_N, F("M495 Z S"));
+        SUBMENU(MSG_FTM_RETRIEVE_FREQ, menu_ftm_resonance_freq);
+      }
+      END_MENU();
+    }
+
+  #endif // FTM_RESONANCE_TEST
 
   #if HAS_DYNAMIC_FREQ
 
@@ -414,108 +427,208 @@ void menu_move() {
 
   #endif // HAS_DYNAMIC_FREQ
 
+  // Suppress warning about storing a stack address in a static string pointer
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdangling-pointer"
+
+  #if ALL(__AVR__, HAS_MARLINUI_U8GLIB) && DISABLED(OPTIMIZE_FT_MOTION_FOR_SIZE)
+    #define CACHE_FOR_SPEED 1
+  #endif
+
+  #if ENABLED(FTM_SMOOTHING)
+    #define _SMOO_MENU_ITEM(A) do{ \
+      editable.decimal = c.smoothingTime.A; \
+      EDIT_ITEM_FAST_N(float43, _AXIS(A), MSG_FTM_SMOOTH_TIME_N, &editable.decimal, 0.0f, FTM_MAX_SMOOTHING_TIME, []{ ftMotion.set_smoothing_time(_AXIS(A), editable.decimal); }); \
+    }while(0);
+  #endif
+
   void menu_ft_motion() {
     // Define stuff ahead of the menu loop
-    MString<20> shaper_name[1 + ENABLED(HAS_Y_AXIS)] {};
-    #if HAS_X_AXIS
-      for (uint_fast8_t a = X_AXIS; a <= TERN(HAS_Y_AXIS, Y_AXIS, X_AXIS); ++a)
-        shaper_name[a] = get_shaper_name(AxisEnum(a));
-    #endif
-    #if HAS_DYNAMIC_FREQ
-      MString<20> dmode = get_dyn_freq_mode_name();
-    #endif
-
     ft_config_t &c = ftMotion.cfg;
+
+    #ifdef __AVR__
+      // Copy Flash strings to RAM for C-string substitution
+      // For U8G paged rendering check and skip extra string copy
+      #if HAS_X_AXIS
+        MString<20> shaper_name;
+        #if CACHE_FOR_SPEED
+          int8_t prev_a = -1;
+        #endif
+        auto _shaper_name = [&](const AxisEnum a) {
+          if (TERN1(CACHE_FOR_SPEED, a != prev_a)) {
+            TERN_(CACHE_FOR_SPEED, prev_a = a);
+            shaper_name = get_shaper_name(a);
+          }
+          return shaper_name;
+        };
+      #endif
+      #if HAS_DYNAMIC_FREQ
+        MString<20> dmode;
+        #if CACHE_FOR_SPEED
+          bool got_d = false;
+        #endif
+        auto _dmode = [&]{
+          if (TERN1(CACHE_FOR_SPEED, !got_d)) {
+            TERN_(CACHE_FOR_SPEED, got_d = true);
+            dmode = get_dyn_freq_mode_name();
+          }
+          return dmode;
+        };
+      #endif
+      MString<20> traj_name;
+      #if CACHE_FOR_SPEED
+        bool got_t = false;
+      #endif
+      auto _traj_name = [&]{
+        if (TERN1(CACHE_FOR_SPEED, !got_t)) {
+          TERN_(CACHE_FOR_SPEED, got_t = true);
+          traj_name = ftMotion.getTrajectoryName();
+        }
+        return traj_name;
+      };
+    #else
+      auto _shaper_name = [](const AxisEnum a) { return get_shaper_name(a); };
+      #if HAS_DYNAMIC_FREQ
+        auto _dmode = []{ return get_dyn_freq_mode_name(); };
+      #endif
+      #if ENABLED(FTM_POLYS)
+        auto _traj_name = []{ return ftMotion.getTrajectoryName(); };
+      #endif
+    #endif
 
     START_MENU();
     BACK_ITEM(MSG_MOTION);
 
     bool show_state = c.active;
-    EDIT_ITEM(bool, MSG_FIXED_TIME_MOTION, &show_state, []{
-      c.active ^= true;
-      ftMotion.update_shaping_params();
-    });
+    EDIT_ITEM(bool, MSG_FIXED_TIME_MOTION, &show_state, []{ (void)ftMotion.toggle(); });
 
-    if (c.active) {
-      #if HAS_X_AXIS
-        SUBMENU_N(X_AXIS, MSG_FTM_CMPN_MODE, menu_ftm_cmpn_x);
-        MENU_ITEM_ADDON_START_RJ(5); lcd_put_u8str(shaper_name[X_AXIS]); MENU_ITEM_ADDON_END();
-
-        if (CMPNSTR_HAS_SHAPER(X_AXIS)) {
-          EDIT_ITEM_FAST_N(float42_52, X_AXIS, MSG_FTM_BASE_FREQ_N, &c.baseFreq[X_AXIS], FTM_MIN_SHAPE_FREQ, (FTM_FS) / 2, ftMotion.update_shaping_params);
-          EDIT_ITEM_FAST_N(float42_52, X_AXIS, MSG_FTM_ZETA_N, &c.zeta[0], 0.0f, 1.0f, ftMotion.update_shaping_params);
-          if (CMPNSTR_IS_EISHAPER(X_AXIS))
-            EDIT_ITEM_FAST_N(float42_52, X_AXIS, MSG_FTM_VTOL_N, &c.vtol[0], 0.0f, 1.0f, ftMotion.update_shaping_params);
-        }
+    // Show only when FT Motion is active (or optionally always show)
+    if (c.active || ENABLED(FT_MOTION_NO_MENU_TOGGLE)) {
+      #if ENABLED(FTM_POLYS)
+        SUBMENU_S(_traj_name(), MSG_FTM_TRAJECTORY, menu_ftm_trajectory_generator);
+        if (ftMotion.getTrajectoryType() == TrajectoryType::POLY6)
+          EDIT_ITEM(float42_52, MSG_FTM_POLY6_OVERSHOOT, &c.poly6_acceleration_overshoot, 1.25f, 1.875f);
       #endif
-      #if HAS_Y_AXIS
-        SUBMENU_N(Y_AXIS, MSG_FTM_CMPN_MODE, menu_ftm_cmpn_y);
-        MENU_ITEM_ADDON_START_RJ(5); lcd_put_u8str(shaper_name[Y_AXIS]); MENU_ITEM_ADDON_END();
 
-        if (CMPNSTR_HAS_SHAPER(Y_AXIS)) {
-          EDIT_ITEM_FAST_N(float42_52, Y_AXIS, MSG_FTM_BASE_FREQ_N, &c.baseFreq[Y_AXIS], FTM_MIN_SHAPE_FREQ, (FTM_FS) / 2, ftMotion.update_shaping_params);
-          EDIT_ITEM_FAST_N(float42_52, Y_AXIS, MSG_FTM_ZETA_N, &c.zeta[1], 0.0f, 1.0f, ftMotion.update_shaping_params);
-          if (CMPNSTR_IS_EISHAPER(Y_AXIS))
-            EDIT_ITEM_FAST_N(float42_52, Y_AXIS, MSG_FTM_VTOL_N, &c.vtol[1], 0.0f, 1.0f, ftMotion.update_shaping_params);
+      #define SHAPER_MENU_ITEM(A) \
+        SUBMENU_N_S(_AXIS(A), _shaper_name(_AXIS(A)), MSG_FTM_CMPN_MODE, menu_ftm_shaper_##A); \
+        if (AXIS_IS_SHAPING(A)) { \
+          EDIT_ITEM_FAST_N(float42_52, _AXIS(A), MSG_FTM_BASE_FREQ_N, &c.baseFreq.A, FTM_MIN_SHAPE_FREQ, (FTM_FS) / 2, ftMotion.update_shaping_params); \
+          EDIT_ITEM_FAST_N(float42_52, _AXIS(A), MSG_FTM_ZETA_N, &c.zeta.A, 0.0f, 1.0f, ftMotion.update_shaping_params); \
+          if (AXIS_IS_EISHAPING(A)) \
+            EDIT_ITEM_FAST_N(float42_52, _AXIS(A), MSG_FTM_VTOL_N, &c.vtol.A, 0.0f, 1.0f, ftMotion.update_shaping_params); \
         }
-      #endif
+      SHAPED_MAP(SHAPER_MENU_ITEM);
 
       #if HAS_DYNAMIC_FREQ
-        SUBMENU(MSG_FTM_DYN_MODE, menu_ftm_dyn_mode);
-        MENU_ITEM_ADDON_START_RJ(11); lcd_put_u8str(dmode); MENU_ITEM_ADDON_END();
+        SUBMENU_S(_dmode(), MSG_FTM_DYN_MODE, menu_ftm_dyn_mode);
         if (c.dynFreqMode != dynFreqMode_DISABLED) {
-          #if HAS_X_AXIS
-            EDIT_ITEM_FAST_N(float42_52, X_AXIS, MSG_FTM_DFREQ_K_N, &c.dynFreqK[X_AXIS], 0.0f, 20.0f);
-          #endif
-          #if HAS_Y_AXIS
-            EDIT_ITEM_FAST_N(float42_52, Y_AXIS, MSG_FTM_DFREQ_K_N, &c.dynFreqK[Y_AXIS], 0.0f, 20.0f);
-          #endif
+          #define _DYN_MENU_ITEM(A) EDIT_ITEM_FAST_N(float42_52, _AXIS(A), MSG_FTM_DFREQ_K_N, &c.dynFreqK.A, 0.0f, 20.0f);
+          SHAPED_MAP(_DYN_MENU_ITEM);
         }
       #endif
 
-      #if HAS_EXTRUDERS
-        EDIT_ITEM(bool, MSG_LINEAR_ADVANCE, &c.linearAdvEna);
-        if (c.linearAdvEna) EDIT_ITEM(float42_52, MSG_ADVANCE_K, &c.linearAdvK, 0, 10);
+      EDIT_ITEM(bool, MSG_FTM_AXIS_SYNC, &c.axis_sync_enabled);
+
+      #if ENABLED(FTM_SMOOTHING)
+        CARTES_MAP(_SMOO_MENU_ITEM);
+      #endif
+
+      #if ENABLED(FTM_RESONANCE_TEST)
+        SUBMENU(MSG_FTM_RESONANCE_TEST, menu_ftm_resonance_test);
       #endif
     }
     END_MENU();
-  }
+  } // menu_ft_motion
 
   void menu_tune_ft_motion() {
-    // Define stuff ahead of the menu loop
-    MString<20> shaper_name[1 + ENABLED(HAS_Y_AXIS)] {};
-    #if HAS_X_AXIS
-      for (uint_fast8_t a = X_AXIS; a <= TERN(HAS_Y_AXIS, Y_AXIS, X_AXIS); ++a)
-        shaper_name[a] = get_shaper_name(AxisEnum(a));
-    #endif
-    #if HAS_DYNAMIC_FREQ
-      MString<20> dmode = get_dyn_freq_mode_name();
-    #endif
 
+    // Define stuff ahead of the menu loop
     ft_config_t &c = ftMotion.cfg;
 
-    START_MENU();
+    #ifdef __AVR__
 
-    #if HAS_X_AXIS
-      SUBMENU_N(X_AXIS, MSG_FTM_CMPN_MODE, menu_ftm_cmpn_x);
-      MENU_ITEM_ADDON_START_RJ(5); lcd_put_u8str(shaper_name[X_AXIS]); MENU_ITEM_ADDON_END();
+      // Copy Flash strings to RAM for C-string substitution
+      // For U8G paged rendering check and skip extra string copy
+
+      #if HAS_X_AXIS
+        #if CACHE_FOR_SPEED
+          int8_t prev_a = -1;
+        #endif
+        MString<20> shaper_name;
+        auto _shaper_name = [&](const AxisEnum a) {
+          if (TERN1(CACHE_FOR_SPEED, a != prev_a)) {
+            TERN_(CACHE_FOR_SPEED, prev_a = a);
+            shaper_name = get_shaper_name(a);
+          }
+          return shaper_name;
+        };
+      #endif
+
+      #if HAS_DYNAMIC_FREQ
+        #if CACHE_FOR_SPEED
+          bool got_d = false;
+        #endif
+        MString<20> dmode;
+        auto _dmode = [&]{
+          if (TERN1(CACHE_FOR_SPEED, !got_d)) {
+            TERN_(CACHE_FOR_SPEED, got_d = true);
+            dmode = get_dyn_freq_mode_name();
+          }
+          return dmode;
+        };
+      #endif
+
+      #if ENABLED(FTM_POLYS)
+        #if CACHE_FOR_SPEED
+          bool got_t = false;
+        #endif
+        MString<20> traj_name;
+        auto _traj_name = [&]{
+          if (TERN1(CACHE_FOR_SPEED, !got_t)) {
+            TERN_(CACHE_FOR_SPEED, got_t = true);
+            traj_name = ftMotion.getTrajectoryName();
+          }
+          return traj_name;
+        };
+      #endif
+
+    #else // !__AVR__
+
+      auto _shaper_name = [](const AxisEnum a) { return get_shaper_name(a); };
+      #if HAS_DYNAMIC_FREQ
+        auto _dmode = []{ return get_dyn_freq_mode_name(); };
+      #endif
+      #if ENABLED(FTM_POLYS)
+        auto _traj_name = []{ return ftMotion.getTrajectoryName(); };
+      #endif
+
+    #endif // !__AVR__
+
+    START_MENU();
+    BACK_ITEM(MSG_TUNE);
+
+    #if ENABLED(FTM_POLYS)
+      SUBMENU_S(_traj_name(), MSG_FTM_TRAJECTORY, menu_ftm_trajectory_generator);
+      if (ftMotion.getTrajectoryType() == TrajectoryType::POLY6)
+        EDIT_ITEM(float42_52, MSG_FTM_POLY6_OVERSHOOT, &c.poly6_acceleration_overshoot, 1.25f, 1.875f);
     #endif
-    #if HAS_Y_AXIS
-      SUBMENU_N(Y_AXIS, MSG_FTM_CMPN_MODE, menu_ftm_cmpn_y);
-      MENU_ITEM_ADDON_START_RJ(5); lcd_put_u8str(shaper_name[Y_AXIS]); MENU_ITEM_ADDON_END();
-    #endif
+
+    #define _CMPM_MENU_ITEM(A) SUBMENU_N_S(_AXIS(A), _shaper_name(_AXIS(A)), MSG_FTM_CMPN_MODE, menu_ftm_shaper_##A);
+    SHAPED_MAP(_CMPM_MENU_ITEM);
 
     #if HAS_DYNAMIC_FREQ
-      SUBMENU(MSG_FTM_DYN_MODE, menu_ftm_dyn_mode);
-      MENU_ITEM_ADDON_START_RJ(dmode.length()); lcd_put_u8str(dmode); MENU_ITEM_ADDON_END();
+      SUBMENU_S(_dmode(), MSG_FTM_DYN_MODE, menu_ftm_dyn_mode);
     #endif
-    #if HAS_EXTRUDERS
-      EDIT_ITEM(bool, MSG_LINEAR_ADVANCE, &ftMotion.cfg.linearAdvEna);
+
+    #if ENABLED(FTM_SMOOTHING)
+      CARTES_MAP(_SMOO_MENU_ITEM);
     #endif
 
     END_MENU();
+  } // menu_tune_ft_motion
 
-  }
+  #pragma GCC diagnostic pop
 
 #endif // FT_MOTION_MENU
 
@@ -562,72 +675,6 @@ void menu_motion() {
   #endif
 
   //
-  // Level Bed
-  //
-  #if ENABLED(AUTO_BED_LEVELING_UBL)
-
-    SUBMENU(MSG_UBL_LEVELING, _lcd_ubl_level_bed);
-
-  #elif ENABLED(LCD_BED_LEVELING)
-
-    if (!g29_in_progress)
-      SUBMENU(MSG_BED_LEVELING, menu_bed_leveling);
-
-  #elif HAS_LEVELING && DISABLED(SLIM_LCD_MENUS)
-
-    #if DISABLED(PROBE_MANUALLY)
-      GCODES_ITEM(MSG_LEVEL_BED, F("G29N"));
-    #endif
-
-    if (all_axes_homed() && leveling_is_valid()) {
-      bool show_state = planner.leveling_active;
-      EDIT_ITEM(bool, MSG_BED_LEVELING, &show_state, _lcd_toggle_bed_leveling);
-    }
-
-    #if ENABLED(ENABLE_LEVELING_FADE_HEIGHT)
-      editable.decimal = planner.z_fade_height;
-      EDIT_ITEM_FAST(float3, MSG_Z_FADE_HEIGHT, &editable.decimal, 0, 100, []{ set_z_fade_height(editable.decimal); });
-    #endif
-
-  #endif
-
-  //
-  // Assisted Bed Tramming
-  //
-  #if ENABLED(ASSISTED_TRAMMING_WIZARD)
-    SUBMENU(MSG_TRAMMING_WIZARD, goto_tramming_wizard);
-  #endif
-
-  //
-  // Bed Tramming Submenu
-  //
-  #if ENABLED(LCD_BED_TRAMMING) && DISABLED(LCD_BED_LEVELING)
-    SUBMENU(MSG_BED_TRAMMING, _lcd_bed_tramming);
-  #endif
-
-  //
-  // Auto Z-Align
-  //
-  #if ANY(Z_STEPPER_AUTO_ALIGN, MECHANICAL_GANTRY_CALIBRATION)
-    GCODES_ITEM(MSG_AUTO_Z_ALIGN, F("G34"));
-  #endif
-
-  //
-  // Probe Deploy/Stow
-  //
-  #if ENABLED(PROBE_DEPLOY_STOW_MENU)
-    GCODES_ITEM(MSG_MANUAL_DEPLOY, F("M401"));
-    GCODES_ITEM(MSG_MANUAL_STOW, F("M402"));
-  #endif
-
-  //
-  // Probe Repeatability Test
-  //
-  #if ENABLED(Z_MIN_PROBE_REPEATABILITY_TEST)
-    GCODES_ITEM(MSG_M48_TEST, F("G28O\nM48 P10"));
-  #endif
-
-  //
   // Auto-calibration with Object
   //
   #if ENABLED(CALIBRATION_GCODE)
@@ -640,6 +687,6 @@ void menu_motion() {
   GCODES_ITEM(MSG_DISABLE_STEPPERS, F("M84"));
 
   END_MENU();
-}
+} // menu_motion
 
 #endif // HAS_MARLINUI_MENU
